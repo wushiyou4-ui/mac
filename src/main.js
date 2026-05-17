@@ -2,6 +2,8 @@ const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const fs = require("fs/promises");
 const path = require("path");
 const crypto = require("crypto");
+const os = require("os");
+const { exec } = require("child_process");
 const pptxgen = require("pptxgenjs");
 
 const TEXT_EXTENSIONS = new Set([
@@ -293,7 +295,22 @@ rename_file: {"type":"rename_file","from":"...","to":"..."}
 move_file: {"type":"move_file","from":"...","to":"..."}
 copy_file: {"type":"copy_file","from":"...","to":"..."}
 create_pptx: {"type":"create_pptx","path":"...","title":"...","slides":[...]}
+run_indesign: {"type":"run_indesign","description":"<what the script does>","jsxCode":"<ExtendScript JSX>"}
 Do not generate delete or shell commands.
+
+## Adobe InDesign Automation (run_indesign)
+Use run_indesign to control Adobe InDesign via ExtendScript (JSX). InDesign must be installed and ideally open.
+Key JSX APIs:
+- New doc: var doc = app.documents.add();
+- Open: var doc = app.open(new File("/abs/path/file.indd"));
+- Active doc: var doc = app.activeDocument;
+- Add text frame: var tf = page.textFrames.add(); tf.geometricBounds=[top,left,bottom,right]; tf.contents="Hello";
+- Place image: var rf = page.rectangles.add(); rf.geometricBounds=[t,l,b,r]; rf.place(new File("/abs/path/img.jpg"));
+- Save: doc.save(new File("/abs/path/out.indd"));
+- Export PDF: doc.exportFile(ExportFormat.PDF_TYPE, new File("/abs/path/out.pdf"), false);
+- Close: doc.close(SaveOptions.NO);
+- Set units: doc.viewPreferences.horizontalMeasurementUnits = MeasurementUnits.MILLIMETERS;
+Always use absolute paths. Wrap risky code in try/catch.
 
 ## PPT Themes
 Add "theme" field to create_pptx to set the visual style. Choose based on topic:
@@ -421,6 +438,30 @@ async function fetchUrlContent(url) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, MAX_FETCH_CHARS);
+}
+
+async function runInDesignScript(jsxCode) {
+  const tmpJsx = path.join(os.tmpdir(), `indesign_${Date.now()}.jsx`);
+  await fs.writeFile(tmpJsx, jsxCode, "utf8");
+
+  try {
+    return await new Promise((resolve, reject) => {
+      let cmd;
+      if (process.platform === "darwin") {
+        const safe = tmpJsx.replace(/'/g, "'\\''");
+        cmd = `osascript -e 'tell application "Adobe InDesign" to do script POSIX file "${safe}" language javascript'`;
+      } else {
+        const safe = tmpJsx.replace(/\\/g, "\\\\");
+        cmd = `powershell -NoProfile -Command "$app=$null;try{$app=[Runtime.InteropServices.Marshal]::GetActiveObject('InDesign.Application')}catch{};if(-not $app){foreach($v in @('InDesign.Application.2026','InDesign.Application.2025','InDesign.Application.2024','InDesign.Application.2023')){try{$app=New-Object -ComObject $v;break}catch{}}};if(-not $app){Write-Error 'InDesign not found';exit 1};$app.DoScript('${safe}',1246973031);Write-Output 'OK'"`;
+      }
+      exec(cmd, { timeout: 60000 }, (err, stdout, stderr) => {
+        if (err) return reject(new Error(stderr.trim() || err.message));
+        resolve(stdout.trim() || "OK");
+      });
+    });
+  } finally {
+    try { await fs.unlink(tmpJsx); } catch {}
+  }
 }
 
 async function callAI({ apiKey, searchApiKey, aiProvider, model, userMessage, manifest, skills, history = [], textAttachments = [], imageAttachments = [], otherAttachments = [], searchContext = [] }) {
@@ -558,7 +599,7 @@ async function runAgentLoop({ apiKey, searchApiKey, aiProvider, model, userMessa
 }
 
 function validateOperation(operation) {
-  const allowed = new Set(["mkdir", "write_file", "write_binary_file", "create_pptx", "rename_file", "move_file", "copy_file"]);
+  const allowed = new Set(["mkdir", "write_file", "write_binary_file", "create_pptx", "rename_file", "move_file", "copy_file", "run_indesign"]);
   if (!operation || !allowed.has(operation.type)) {
     throw new Error(`Unsupported operation: ${operation?.type || "unknown"}`);
   }
@@ -858,6 +899,14 @@ async function executeOperation(operation) {
 
   if (operation.type === "create_pptx") {
     return createPptx(operation);
+  }
+
+  if (operation.type === "run_indesign") {
+    if (typeof operation.jsxCode !== "string" || !operation.jsxCode.trim()) {
+      throw new Error("run_indesign requires a non-empty jsxCode string.");
+    }
+    const result = await runInDesignScript(operation.jsxCode);
+    return { ok: true, message: `InDesign script executed. ${result}` };
   }
 
   const from = resolveInsideWorkspace(operation.from);
