@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DeepSeek Local Agent</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">D</span>
+          <div>
+            <h1>DeepSeek Agent</h1>
+            <p data-i18n="brandSubtitle">本地文件助手</p>
+          </div>
+        </div>
+
+        <section class="panel compact-panel">
+          <label for="language" data-i18n="languageLabel">语言</label>
+          <select id="language">
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+          </select>
+        </section>
+
+        <section class="panel compact-panel">
+          <label for="aiProvider" data-i18n="aiProviderLabel">AI 提供商</label>
+          <select id="aiProvider">
+            <option value="deepseek" data-i18n="providerDeepSeek">DeepSeek 官方</option>
+            <option value="bocha" data-i18n="providerBocha">博查 Model API</option>
+          </select>
+          <label for="apiKey">DeepSeek API Key</label>
+          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+          <label for="searchApiKey" data-i18n="bochaApiKeyLabel">博查 API Key</label>
+          <input id="searchApiKey" type="password" placeholder="博查统一 Key（搜索 + 模型）" autocomplete="off" />
+          <label for="model" data-i18n="modelLabel">模型</label>
+          <select id="model">
+            <optgroup label="DeepSeek 官方">
+              <option value="deepseek-v4-flash">deepseek-v4-flash</option>
+              <option value="deepseek-v4-pro">deepseek-v4-pro</option>
+            </optgroup>
+            <optgroup label="博查 Model API">
+              <option value="deepseek-v4">DeepSeek V4（博查）</option>
+            </optgroup>
+          </select>
+          <button id="saveSettings" class="secondary" data-i18n="saveButton">保存</button>
+        </section>
+
+        <section class="panel compact-panel">
+          <label data-i18n="workspaceLabel">工作目录</label>
+          <div id="workspacePath" class="path-display">未选择</div>
+          <button id="chooseWorkspace" data-i18n="chooseFolderButton">选择文件夹</button>
+        </section>
+
+        <section class="panel conversation-panel">
+          <div class="panel-heading">
+            <span data-i18n="conversationsLabel">对话</span>
+            <button id="newConversation" class="icon-button" data-i18n-title="newConversationTitle" title="新建对话">+</button>
+          </div>
+          <div id="conversationList" class="conversation-list"></div>
+        </section>
+
+        <section class="panel compact-panel">
+          <label for="approvalMode" data-i18n="accessLabel">访问权限</label>
+          <select id="approvalMode">
+            <option value="on-request" data-i18n="accessAsk">写入前询问</option>
+            <option value="trusted-workspace" data-i18n="accessTrusted">自动批准工作区写入</option>
+            <option value="read-only" data-i18n="accessReadOnly">只读</option>
+          </select>
+          <p class="hint" data-i18n="accessHint">应用到当前工作目录，并在下次打开时保留。</p>
+        </section>
+
+        <section class="panel skill-panel">
+          <div class="panel-heading">
+            <span>Skills</span>
+            <button id="refreshSkills" class="icon-button" data-i18n-title="refreshTitle" title="刷新">R</button>
+          </div>
+          <div id="skillList" class="skill-list"></div>
+          <div class="skill-actions">
+            <button id="createGlobalSkill" class="secondary" data-i18n="newGlobalSkill">新建全局</button>
+            <button id="createWorkspaceSkill" class="secondary" data-i18n="newWorkspaceSkill">新建项目</button>
+          </div>
+          <div class="skill-actions">
+            <button id="openGlobalSkills" class="secondary" data-i18n="openGlobalSkill">打开全局</button>
+            <button id="openWorkspaceSkills" class="secondary" data-i18n="openWorkspaceSkill">打开项目</button>
+          </div>
+        </section>
+
+        <section class="panel file-panel">
+          <div class="panel-heading">
+            <span data-i18n="filesLabel">文件</span>
+            <button id="refreshFiles" class="icon-button" data-i18n-title="refreshTitle" title="刷新">R</button>
+          </div>
+          <div id="fileList" class="file-list"></div>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <div id="messages" class="messages">
+          <div class="message assistant">
+            <strong>Agent</strong>
+            <p data-i18n="welcomeMessage">选择一个工作文件夹，然后告诉我你想检查、整理、创建或修改什么。</p>
+          </div>
+        </div>
+
+        <section id="referencesPanel" class="references-panel">
+          <div class="references-header">
+            <span data-i18n="referencesLabel">引用资料</span>
+            <button id="addFileButton" class="icon-button secondary" data-i18n-title="addFilesTitle" title="添加文件">+</button>
+          </div>
+          <div id="attachmentList" class="attachment-list"></div>
+          <input id="fileInput" type="file" multiple style="display:none" accept="*/*" />
+        </section>
+
+        <section id="planPanel" class="plan-panel hidden">
+          <div class="plan-header">
+            <h2 data-i18n="pendingPlan">待执行计划</h2>
+            <span id="operationCount"></span>
+          </div>
+          <pre id="operationPreview"></pre>
+          <div class="plan-actions">
+            <button id="executePlan" data-i18n="executeButton">执行</button>
+            <button id="cancelPlan" class="secondary" data-i18n="cancelButton">取消</button>
+          </div>
+        </section>
+
+        <form id="chatForm" class="composer">
+          <textarea id="messageInput" rows="3" data-i18n-placeholder="messagePlaceholder" placeholder="例如：把这些文档总结成一个新的 Markdown 文件"></textarea>
+          <button id="sendMessage" type="submit" data-i18n="sendButton">发送</button>
+        </form>
+      </section>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
